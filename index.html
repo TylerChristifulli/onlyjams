@@ -333,12 +333,13 @@ function renderEdit(){
 /* ---------- PDF import (Ultimate Guitar / e-chords style charts) ---------- */
 const CHORD_RE=/^(N\.?C\.?|x\d+|\|+|[A-G][#b]?(m|maj|min|dim|aug|sus|add|M)?\d{0,2}(sus\d)?(add\d)?(\([^)]*\))?(\/[A-G][#b]?)?)$/;
 function isChordToken(t){ return CHORD_RE.test(t); }
-function isChordLine(l){ if(!l||!l.trim())return false; const toks=l.trim().split(/\s+/); let real=0; for(const t of toks){ if(!isChordToken(t)) return false; if(/[A-G]/.test(t)) real++; } return real>0; }
+function isChordLine(l){ if(!l||!l.trim())return false; const s=l.replace(/\([^)]*\)/g,' ').trim(); if(!s)return false; const toks=s.split(/\s+/); let real=0; for(const t of toks){ if(!isChordToken(t)) return false; if(/[A-G]/.test(t)) real++; } return real>0; }
 function isSection(l){ return /^\s*\[.+\]\s*$/.test(l||''); }
 function isTab(l){ const t=l||''; if((t.split('-').length-1)>=6 && t.includes('|')) return true; if(/^\s*[eBGDAEb#]{1,2}\s*\|/.test(t)) return true; return false; }
 function isJunkLine(l){ const t=(l||'').trim(); if(!t)return false;
-  if(/^(Paper size|Meta info|Font size|Two columns|PRINT|DOWNLOAD PDF|A4|Difficulty|Tuning|CHORDS|Official|Ver \d+|Tab|Text tab|Intro tab|Close ad|Play next|Show all|Skip Ad|Download|YouTube videos|Auto scroll|Show chords|Related|Edit|Favorite|Correction|Pro|Add to|Continue|Sign up|Log in)\b/i.test(t)) return true;
+  if(/^(Paper size|Meta info|Font size|Two columns|PRINT|DOWNLOAD PDF|A4|Difficulty|Tuning|Capo|CHORDS|Official|Ver \d+|Tab|Text tab|Intro tab|Close ad|Play next|Show all|Skip Ad|Download|YouTube videos|Auto ?scroll|Show chords|Related|Edit|Favorite|Correction|Pro|Add to|Continue|Sign up|Log in|Author|Playlists|Messages|Settings|Subscriptions|More Versions|My tabs|Learn any song|Tabs|Courses|Songbooks|Articles|Forums|Joined)\b/i.test(t)) return true;
   if(/ultimate.?guitar/i.test(t) || /e-?chords/i.test(t)) return true;
+  if(/\b(views|saves|comments|contributor)\b/i.test(t) && /\d/.test(t)) return true;
   if(/^https?:\/\//i.test(t)) return true;
   if(/^\d+\s*\/\s*\d+$/.test(t)) return true;
   if(/^\d+$/.test(t)) return true;
@@ -354,7 +355,7 @@ function stripInline(l){ return (l||'').replace(/\b\d\.\d+\s*\(\d[\d.]*[KkMm]?\)
 const JUNK3=/^(ukulele|guitar|piano|capo|strumming|key:|tempo|bpm|chords used|view|favorite|report)\b/i;
 function isDiagramBlock(b){ const s=b.trim(); const letters=s.replace(/[^A-Za-z]/g,'').length; return (s.split('-').length-1)>=4 && /\d/.test(s) && letters<=2; }
 function blockList(line){ const res=[]; const re=/\S(?:.*?\S)?(?=\s{6,}|$)/g; let m; while((m=re.exec(line))){ res.push([m.index,m[0]]); if(re.lastIndex===m.index) re.lastIndex++; } return res; }
-function blockIsChord(b){ const toks=b.trim().split(/\s+/); return toks.length>0 && toks.every(isChordToken) && toks.some(t=>/[A-G]/.test(t)); }
+function blockIsChord(b){ const s=b.replace(/\([^)]*\)/g,' ').trim(); if(!s)return false; const toks=s.split(/\s+/); return toks.length>0 && toks.every(isChordToken) && toks.some(t=>/[A-G]/.test(t)); }
 function cleanLine(line){
   const bs=blockList(line); if(!bs.length) return '';
   const allchord=bs.every(([c,b])=>blockIsChord(b));
@@ -401,7 +402,7 @@ async function pdfToLines(file){
 
 function mergeChordLyric(ch, ly){
   const chords=[]; const re=/\S+/g; let m;
-  while((m=re.exec(ch))) chords.push({col:m.index, txt:m[0]});
+  while((m=re.exec(ch))){ if(isChordToken(m[0])) chords.push({col:m.index, txt:m[0]}); }
   let out=(ly||"").replace(/\s+$/,'');
   for(let k=chords.length-1;k>=0;k--){ const c=chords[k]; const pos=Math.min(c.col, out.length); out=out.slice(0,pos)+"["+c.txt+"]"+out.slice(pos); }
   return out.replace(/^\s+/,'');
@@ -409,8 +410,8 @@ function mergeChordLyric(ch, ly){
 function chartToChordPro(rawlines){
   const lines=rawlines.map(l=>cleanLine(stripInline(l)));
   let start=0;
-  for(let i=0;i<lines.length;i++){ const a=lines[i]; if(isJunkLine(a))continue;
-    if(isSection(a) || (isChordLine(a)&&lines[i+1]&&lines[i+1].trim()&&!isChordLine(lines[i+1])&&!isSection(lines[i+1])&&!isJunkLine(lines[i+1]))){ start=i; break; } }
+  for(let i=0;i<lines.length;i++){ const a=lines[i]; if(isJunkLine(a)||!a.trim())continue;
+    if(isSection(a) || isChordLine(a)){ start=i; break; } }
   const body=[];
   for(let i=start;i<lines.length;i++){
     let ln=stripJunk(lines[i]); if(isJunkLine(ln)) continue;
@@ -419,7 +420,7 @@ function chartToChordPro(rawlines){
     if(isChordLine(ln)){
       const ly=(lines[i+1]!==undefined)?stripJunk(lines[i+1]):"";
       if(ly.trim() && !isChordLine(ly) && !isSection(ly) && !isJunkLine(ly)){ body.push(mergeChordLyric(ln,ly)); i++; }
-      else { body.push(ln.trim().split(/\s+/).map(c=>"["+c+"]").join(" ")); }
+      else { const ct=ln.trim().split(/\s+/).filter(isChordToken); const ann=(ln.match(/\([^)]*\)/g)||[]).join(" "); body.push(ct.map(c=>"["+c+"]").join(" ")+(ann?" "+ann:"")); }
       continue;
     }
     if(ln.trim()===""){ if(body.length&&body[body.length-1]!=="") body.push(""); continue; }
