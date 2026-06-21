@@ -209,7 +209,7 @@ function renderPaste(){
 
 function renderHome(){
   fab.classList.remove('hidden'); fab.textContent="＋"; fab.onclick=newSetlist;
-  let h=`<div class="toprow"><button class="btn alt" id="libBtn">🎵 Song Library (${DB.songs.length})</button></div>`;
+  let h=`<div class="toprow"><button class="btn alt" id="libBtn">🎵 Song Library (${DB.songs.length})</button>${DB.songs.length?`<button class="btn alt" id="exportBtn">⬇ Export songs.json</button>`:''}</div>`;
   h+=`<div class="muted" style="margin:10px 2px 4px">Setlists</div>`;
   if(DB.setlists.length===0) h+=`<div class="empty">No setlists yet.<br>Tap ＋ to make one.</div>`;
   DB.setlists.forEach(sl=>{
@@ -220,6 +220,7 @@ function renderHome(){
   });
   main.innerHTML=h;
   document.getElementById('libBtn').onclick=()=>go({name:"library"});
+  { const eb=document.getElementById('exportBtn'); if(eb) eb.onclick=exportData; }
   main.querySelectorAll('[data-sl]').forEach(el=>el.onclick=(e)=>{ if(e.target.dataset.play)return; go({name:"setlist",setlistId:el.dataset.sl});});
   main.querySelectorAll('[data-play]').forEach(b=>b.onclick=(e)=>{e.stopPropagation(); const sl=DB.setlists.find(x=>x.id===b.dataset.play); if(sl&&sl.songs.length) openPerf(sl.songs,0);});
 }
@@ -530,7 +531,7 @@ document.getElementById('menuBtn').onclick=()=>{
   else if(ch==='export'){ exportData(); }
   else if(ch==='import'){ importBackup(); }
 };
-function exportData(){ const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="onlyjams-backup.json"; a.click(); }
+function exportData(){ const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="songs.json"; a.click(); alert("Saved songs.json to your Downloads. Send it to Claude (or drop it in your OnlyJams folder) to share with the band."); }
 function importBackup(){ const inp=document.createElement('input');inp.type='file';inp.accept='.json,application/json';inp.onchange=()=>{const f=inp.files[0];const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(d.songs&&d.setlists){DB=d;save();go({name:"home"});alert("Imported.");}else alert("Not a valid backup file.");}catch(e){alert("Could not read file.");}};r.readAsText(f);};inp.click(); }
 
 // Load shared band library (songs.json next to this file) if present, so all bandmates see the same set.
