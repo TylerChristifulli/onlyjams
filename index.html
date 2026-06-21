@@ -64,6 +64,18 @@
   .drag-over{outline:2px dashed var(--accent);}
   .speed{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);}
   .empty{text-align:center;color:var(--muted);padding:40px 10px;}
+  #notesPanel{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.55);display:flex;align-items:flex-end;justify-content:center;}
+  #notesPanel .sheet{background:var(--panel);border:1px solid var(--line);border-radius:18px 18px 0 0;width:100%;max-width:760px;max-height:82vh;display:flex;flex-direction:column;}
+  #notesPanel .nhead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line);}
+  #notesPanel .nhead .t{font-weight:700;font-size:16px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  #notesList{flex:1;overflow-y:auto;padding:10px 16px;}
+  .note{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 0;background:var(--panel2);}
+  .note .meta{font-size:12px;color:var(--muted);margin-bottom:3px;display:flex;gap:8px;align-items:center;}
+  .note .meta .who{color:var(--accent2);font-weight:600;}
+  .note .body{white-space:pre-wrap;font-size:15px;line-height:1.45;}
+  .note .del{margin-left:auto;color:var(--danger);cursor:pointer;font-size:12px;}
+  #noteCompose{display:flex;gap:8px;padding:10px 16px env(safe-area-inset-bottom);border-top:1px solid var(--line);}
+  #noteText{min-height:44px;max-height:120px;}
   a{color:var(--accent);}
 </style>
 </head>
@@ -101,9 +113,27 @@
       <button class="minibtn" id="fsDown">A−</button>
       <button class="minibtn" id="fsUp">A+</button>
     </div>
+    <div class="grp">
+      <button class="minibtn" id="notesBtn">📝 Notes</button>
+    </div>
     <div class="grp speed">
       <button class="minibtn" id="scrollBtn">▶ Scroll</button>
       <button class="minibtn" id="spDown">−</button><span id="spVal">3</span><button class="minibtn" id="spUp">+</button>
+    </div>
+  </div>
+</div>
+
+<!-- Community notes overlay -->
+<div id="notesPanel" class="hidden">
+  <div class="sheet">
+    <div class="nhead">
+      <div class="t">Notes</div>
+      <button class="iconbtn" id="notesClose">✕</button>
+    </div>
+    <div id="notesList"></div>
+    <div id="noteCompose">
+      <textarea id="noteText" placeholder="Add a note for the band… (key change, intro count, reminder)"></textarea>
+      <button class="btn" id="notePost">Post</button>
     </div>
   </div>
 </div>
@@ -499,6 +529,8 @@ function drawPerf(){
   document.documentElement.style.setProperty('--fs',pf.fs+'px');
   songEl.innerHTML=renderSong(s.body, pf.steps, useFlats);
   perfScroll.scrollTop=0;
+  updateNotesBtn();
+  if(!document.getElementById('notesPanel').classList.contains('hidden')) openNotes();
 }
 function closePerf(){ stopScroll(); perf.classList.add('hidden'); }
 function nextSong(){ if(pf.idx<pf.list.length-1){pf.idx++;pf.steps=0;stopScroll();drawPerf();} }
@@ -524,6 +556,29 @@ document.getElementById('spDown').onclick=()=>{pf.speed=Math.max(1,pf.speed-1);d
 let tsx=0,tsy=0;
 perfScroll.addEventListener('touchstart',e=>{tsx=e.touches[0].clientX;tsy=e.touches[0].clientY;},{passive:true});
 perfScroll.addEventListener('touchend',e=>{const dx=e.changedTouches[0].clientX-tsx,dy=e.changedTouches[0].clientY-tsy; if(Math.abs(dx)>80&&Math.abs(dx)>Math.abs(dy)*1.5){dx<0?nextSong():prevSong();}});
+
+/* ---------- Community notes (shared per song) ---------- */
+window.NOTES = (()=>{ try{ return JSON.parse(localStorage.getItem('onlyjams.notes'))||{}; }catch(e){ return {}; } })();
+function getName(){ let n=localStorage.getItem('onlyjams.name'); if(!n){ n=((typeof prompt==='function'?prompt("Your name (so the band knows who left the note):",""):"")||"").trim(); if(n) localStorage.setItem('onlyjams.name', n); } return n||"Anon"; }
+function currentSongId(){ return pf.list[pf.idx]; }
+function notesForSong(id){ const o=(window.NOTES&&window.NOTES[id])||{}; return Object.keys(o).map(k=>Object.assign({k}, o[k])).sort((a,b)=>(a.ts||0)-(b.ts||0)); }
+function relTime(ts){ if(!ts) return ''; const d=Date.now()-ts; const m=Math.floor(d/60000); if(m<1)return'just now'; if(m<60)return m+'m ago'; const h=Math.floor(m/60); if(h<24)return h+'h ago'; return Math.floor(h/24)+'d ago'; }
+function openNotes(){ const s=songById(currentSongId()); document.querySelector('#notesPanel .t').textContent='Notes — '+(s?s.title:''); document.getElementById('notesPanel').classList.remove('hidden'); renderNotes(); }
+function closeNotes(){ document.getElementById('notesPanel').classList.add('hidden'); }
+function renderNotes(){ const id=currentSongId(); const list=notesForSong(id); const el=document.getElementById('notesList');
+  if(!list.length){ el.innerHTML='<div class="empty">No notes yet. Add one for the band.</div>'; }
+  else { el.innerHTML=list.map(n=>`<div class="note"><div class="meta"><span class="who">${esc(n.by||'Anon')}</span><span>${relTime(n.ts)}</span><span class="del" data-note="${n.k}">delete</span></div><div class="body">${esc(n.text||'')}</div></div>`).join('');
+    el.querySelectorAll('[data-note]').forEach(b=>b.onclick=()=>delNote(id, b.dataset.note)); el.scrollTop=el.scrollHeight; }
+  const nb=document.getElementById('notesBtn'); if(nb) nb.textContent='📝 Notes'+(list.length?' ('+list.length+')':''); }
+function addNote(){ const ta=document.getElementById('noteText'); const text=(ta.value||'').trim(); if(!text) return; const id=currentSongId(); const note={text, by:getName(), ts:Date.now()};
+  if(window.__notesRef){ window.__notesRef.child(id).push(note); }
+  else { window.NOTES[id]=window.NOTES[id]||{}; window.NOTES[id]['local'+Date.now()]=note; try{localStorage.setItem('onlyjams.notes',JSON.stringify(window.NOTES));}catch(e){} renderNotes(); }
+  ta.value=''; }
+function delNote(id,key){ if(!confirm('Delete this note?')) return; if(window.__notesRef){ window.__notesRef.child(id).child(key).remove(); } else { if(window.NOTES[id]) delete window.NOTES[id][key]; try{localStorage.setItem('onlyjams.notes',JSON.stringify(window.NOTES));}catch(e){} renderNotes(); } }
+function updateNotesBtn(){ const nb=document.getElementById('notesBtn'); if(!nb||!pf.list) return; const id=pf.list[pf.idx]; const c=(id&&window.NOTES&&window.NOTES[id])?Object.keys(window.NOTES[id]).length:0; nb.textContent='📝 Notes'+(c?' ('+c+')':''); }
+document.getElementById('notesBtn').onclick=openNotes;
+document.getElementById('notesClose').onclick=closeNotes;
+document.getElementById('notePost').onclick=addNote;
 
 /* ---------- Theme + data menu ---------- */
 const themePref="stagebinder.theme";
@@ -564,6 +619,13 @@ function boot(){
       } else {
         seedFromSongsJson(); // empty DB: populate once from the committed songs.json
       }
+    });
+    window.__notesRef = firebase.database().ref('notes');
+    window.__notesRef.on('value', (snap)=>{
+      window.NOTES = snap.val()||{};
+      try{ localStorage.setItem('onlyjams.notes', JSON.stringify(window.NOTES)); }catch(e){}
+      if(!document.getElementById('notesPanel').classList.contains('hidden')) renderNotes();
+      if(!perf.classList.contains('hidden')) updateNotesBtn();
     });
   }catch(e){ console.warn('Firebase init failed; running in local mode', e); }
 }
