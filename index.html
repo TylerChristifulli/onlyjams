@@ -109,9 +109,12 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
 "use strict";
 if(window.pdfjsLib){ pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; }
+const firebaseConfig = { apiKey:"AIzaSyA2r2R3Vm-svW_Mfbh34wkqTwCbr8LkcsI", authDomain:"onlyjams-a8469.firebaseapp.com", databaseURL:"https://onlyjams-a8469-default-rtdb.firebaseio.com", projectId:"onlyjams-a8469", storageBucket:"onlyjams-a8469.firebasestorage.app", messagingSenderId:"1037044589289", appId:"1:1037044589289:web:c691f6336ebe03a15a8678" };
 /* ---------- Default content (edit in-app, or I bake your PDFs in here) ---------- */
 const DEFAULT_SONGS = [];
 const DEFAULT_SETLISTS = [];
@@ -120,7 +123,8 @@ const DEFAULT_SETLISTS = [];
 const LS="onlyjams.v2";
 function load(){ try{const d=JSON.parse(localStorage.getItem(LS)); if(d&&d.songs&&d.setlists) return d;}catch(e){}
   return {songs:structuredClone(DEFAULT_SONGS), setlists:structuredClone(DEFAULT_SETLISTS)}; }
-function save(){ localStorage.setItem(LS, JSON.stringify(DB)); }
+let __syncing=false; // true while applying a remote update, to avoid echo writes
+function save(){ localStorage.setItem(LS, JSON.stringify(DB)); if(window.__fbref && !__syncing){ try{ window.__fbref.set(DB); }catch(e){} } }
 let DB = load();
 // auto-tidy already-imported songs (no re-import needed)
 (function migrate(){ let changed=false; (DB.songs||[]).forEach(s=>{ if(typeof s.body==='string'){ const t=tidyBody(s.body); if(t!==s.body){ s.body=t; changed=true; } } }); if(changed) save(); })();
@@ -534,20 +538,34 @@ document.getElementById('menuBtn').onclick=()=>{
 function exportData(){ const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="songs.json"; a.click(); alert("Saved songs.json to your Downloads. Send it to Claude (or drop it in your OnlyJams folder) to share with the band."); }
 function importBackup(){ const inp=document.createElement('input');inp.type='file';inp.accept='.json,application/json';inp.onchange=()=>{const f=inp.files[0];const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(d.songs&&d.setlists){DB=d;save();go({name:"home"});alert("Imported.");}else alert("Not a valid backup file.");}catch(e){alert("Could not read file.");}};r.readAsText(f);};inp.click(); }
 
-// Load shared band library (songs.json next to this file) if present, so all bandmates see the same set.
-async function boot(){
+// Live shared band library via Firebase. Everyone reads/writes one database, so edits sync to all.
+// Falls back to this device's saved copy when offline or if Firebase can't load.
+async function seedFromSongsJson(){
+  try{ const r=await fetch('songs.json?_='+Date.now(),{cache:'no-store'});
+    if(r.ok){ const j=await r.json(); if(j && Array.isArray(j.songs) && j.songs.length){ window.__fbref.set({songs:j.songs, setlists:Array.isArray(j.setlists)?j.setlists:[]}); } }
+  }catch(e){}
+}
+function boot(){
+  applyTheme();
+  go({name:"home"}); // show local cache immediately
+  if(typeof firebase==='undefined'){ return; } // offline / SDK blocked -> stay local
   try{
-    const r=await fetch('songs.json?_='+Date.now(),{cache:'no-store'});
-    if(r.ok){ const d=await r.json();
+    firebase.initializeApp(firebaseConfig);
+    window.__fbref = firebase.database().ref('library');
+    window.__fbref.on('value', (snap)=>{
+      const d = snap.val();
       if(d && Array.isArray(d.songs)){
         (d.songs||[]).forEach(s=>{ if(typeof s.body==='string') s.body=tidyBody(s.body); });
-        DB={songs:d.songs, setlists:Array.isArray(d.setlists)?d.setlists:[]};
-        save();
+        __syncing=true;
+        DB = {songs:d.songs, setlists:Array.isArray(d.setlists)?d.setlists:[]};
+        localStorage.setItem(LS, JSON.stringify(DB));
+        __syncing=false;
+        if(['home','library','setlist'].includes(view.name)) render(); // refresh non-editing views live
+      } else {
+        seedFromSongsJson(); // empty DB: populate once from the committed songs.json
       }
-    }
-  }catch(e){ /* no shared file or offline — fall back to this device's saved copy */ }
-  applyTheme();
-  go({name:"home"});
+    });
+  }catch(e){ console.warn('Firebase init failed; running in local mode', e); }
 }
 boot();
 </script>
