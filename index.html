@@ -144,7 +144,7 @@ function renderSong(body, steps, useFlats){
   body.split(/\r?\n/).forEach(line=>{
     const sec=line.match(/^\{(.+?)\}\s*$/);
     if(sec){ out.push(`<div class="sec">${esc(sec[1])}</div>`); return; }
-    if(line.trim()===""){ out.push('<div class="ln">&nbsp;</div>'); return; }
+    if(line.trim()===""){ out.push('<div class="ln" style="height:.55em"></div>'); return; }
     if(!line.includes('[')){ out.push(`<div class="ln"><span class="seg"><span class="ch"></span><span class="ly">${esc(line)}</span></span></div>`); return; }
     // split into [chord]lyric segments
     let html='<div class="ln">';
@@ -424,7 +424,24 @@ function chartToChordPro(rawlines){
     body.push(ln.replace(/\s+$/,''));
   }
   while(body.length&&body[body.length-1]==="") body.pop();
-  return body.join("\n");
+  // collapse consecutive blanks; drop short far-right "related song" leaks (isolated Title-Case lines with no chord)
+  const collapsed=[];
+  for(let k=0;k<body.length;k++){ const l=body[k];
+    if(l==="" && collapsed[collapsed.length-1]==="") continue;
+    collapsed.push(l);
+  }
+  const out2=[];
+  for(let k=0;k<collapsed.length;k++){ const l=collapsed[k];
+    const isLyric = l && !/^\{/.test(l) && !l.includes('[');
+    const prevBlank = (out2[out2.length-1]||"")==="";
+    const nextBlank = (collapsed[k+1]===undefined)||collapsed[k+1]==="";
+    const words = l.trim().split(/\s+/);
+    const titleCaseShort = words.length<=3 && words.length>=1 && words.every(w=>/^[A-Z][A-Za-z'.-]*$/.test(w));
+    if(isLyric && prevBlank && nextBlank && titleCaseShort){ continue; } // likely sidebar leak (e.g. "Better Man")
+    out2.push(isLyric ? l.replace(/^\s+/,'') : l); // left-trim chord-less lyric lines (fixes center-column indent)
+  }
+  while(out2.length&&out2[out2.length-1]==="") out2.pop();
+  return out2.join("\n");
 }
 function parseSongMeta(name){
   let n=name.replace(/\.pdf$/i,'').replace(/^\(\d+\)\s*/,'').replace(/@.*$/,'').replace(/\|.*$/,'').replace(/\bver\.?\s*\d+\b/gi,'').replace(/\(\s*\)/g,'');
