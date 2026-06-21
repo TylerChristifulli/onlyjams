@@ -338,7 +338,7 @@ function isChordLine(l){ if(!l||!l.trim())return false; const s=l.replace(/\([^)
 function isSection(l){ return /^\s*\[.+\]\s*$/.test(l||''); }
 function isTab(l){ const t=l||''; if((t.split('-').length-1)>=6 && t.includes('|')) return true; if(/^\s*[eBGDAEb#]{1,2}\s*\|/.test(t)) return true; return false; }
 function isJunkLine(l){ const t=(l||'').trim(); if(!t)return false;
-  if(/^(Paper size|Meta info|Font size|Two columns|PRINT|DOWNLOAD PDF|A4|Difficulty|Tuning|Capo|CHORDS|Official|Ver \d+|Tab|Text tab|Intro tab|Close ad|Play next|Show all|Skip Ad|Download|YouTube videos|Auto ?scroll|Show chords|Related|Edit|Favorite|Correction|Pro|Add to|Continue|Sign up|Log in|Author|Playlists|Messages|Settings|Subscriptions|More Versions|My tabs|Learn any song|Tabs|Courses|Songbooks|Articles|Forums|Joined)\b/i.test(t)) return true;
+  if(/^(Paper size|Meta info|Font size|Two columns|PRINT|DOWNLOAD PDF|A4|Difficulty|Tuning|Capo|CHORDS|Official|Ver \d+|Tab|Text tab|Intro tab|Close ad|Play next|Show all|Skip Ad|Download|YouTube videos|Auto ?scroll|Show chords|Related|Edit|Favorite|Correction|Create correction|Report bad tab|Create|Report|Pro|Add to|Continue|Sign up|Log in|Author|Playlists|Messages|Settings|Subscriptions|More Versions|My tabs|Learn any song|Tabs|Courses|Songbooks|Articles|Forums|Joined)\b/i.test(t)) return true;
   if(/ultimate.?guitar/i.test(t) || /e-?chords/i.test(t)) return true;
   if(/\b(views|saves|comments|contributor)\b/i.test(t) && /\d/.test(t)) return true;
   if(/^https?:\/\//i.test(t)) return true;
@@ -409,7 +409,8 @@ function mergeChordLyric(ch, ly){
   return out.replace(/^\s+/,'');
 }
 function chartToChordPro(rawlines){
-  const lines=rawlines.map(l=>cleanLine(stripInline(l)));
+  let lines=rawlines.map(l=>cleanLine(stripInline(l)));
+  const _ri=lines.findIndex(l=>/^rating$/i.test((l||'').trim())); if(_ri>=0) lines=lines.slice(0,_ri); // cut everything from the "Rating" widget down
   let start=0;
   for(let i=0;i<lines.length;i++){ const a=lines[i]; if(isJunkLine(a)||!a.trim())continue;
     if(isSection(a) || isChordLine(a)){ start=i; break; } }
@@ -433,7 +434,8 @@ function chartToChordPro(rawlines){
 // Cleans up a song body: collapses blanks, drops isolated "related song" leaks, left-trims chord-less lines.
 // Idempotent — safe to run on already-imported songs.
 function tidyBody(bodyStr){
-  const body=(bodyStr||"").split(/\r?\n/);
+  let body=(bodyStr||"").split(/\r?\n/);
+  const _ri=body.findIndex(l=>/^rating$/i.test((l||'').trim())); if(_ri>=0) body=body.slice(0,_ri); // cut "Rating" widget and everything below
   const collapsed=[];
   for(const l of body){ if(l==="" && collapsed[collapsed.length-1]==="") continue; collapsed.push(l); }
   const out2=[];
