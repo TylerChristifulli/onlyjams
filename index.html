@@ -122,6 +122,8 @@ function load(){ try{const d=JSON.parse(localStorage.getItem(LS)); if(d&&d.songs
   return {songs:structuredClone(DEFAULT_SONGS), setlists:structuredClone(DEFAULT_SETLISTS)}; }
 function save(){ localStorage.setItem(LS, JSON.stringify(DB)); }
 let DB = load();
+// auto-tidy already-imported songs (no re-import needed)
+(function migrate(){ let changed=false; (DB.songs||[]).forEach(s=>{ if(typeof s.body==='string'){ const t=tidyBody(s.body); if(t!==s.body){ s.body=t; changed=true; } } }); if(changed) save(); })();
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function songById(id){ return DB.songs.find(s=>s.id===id); }
 
@@ -424,12 +426,14 @@ function chartToChordPro(rawlines){
     body.push(ln.replace(/\s+$/,''));
   }
   while(body.length&&body[body.length-1]==="") body.pop();
-  // collapse consecutive blanks; drop short far-right "related song" leaks (isolated Title-Case lines with no chord)
+  return tidyBody(body.join("\n"));
+}
+// Cleans up a song body: collapses blanks, drops isolated "related song" leaks, left-trims chord-less lines.
+// Idempotent — safe to run on already-imported songs.
+function tidyBody(bodyStr){
+  const body=(bodyStr||"").split(/\r?\n/);
   const collapsed=[];
-  for(let k=0;k<body.length;k++){ const l=body[k];
-    if(l==="" && collapsed[collapsed.length-1]==="") continue;
-    collapsed.push(l);
-  }
+  for(const l of body){ if(l==="" && collapsed[collapsed.length-1]==="") continue; collapsed.push(l); }
   const out2=[];
   for(let k=0;k<collapsed.length;k++){ const l=collapsed[k];
     const isLyric = l && !/^\{/.test(l) && !l.includes('[');
@@ -437,10 +441,11 @@ function chartToChordPro(rawlines){
     const nextBlank = (collapsed[k+1]===undefined)||collapsed[k+1]==="";
     const words = l.trim().split(/\s+/);
     const titleCaseShort = words.length<=3 && words.length>=1 && words.every(w=>/^[A-Z][A-Za-z'.-]*$/.test(w));
-    if(isLyric && prevBlank && nextBlank && titleCaseShort){ continue; } // likely sidebar leak (e.g. "Better Man")
-    out2.push(isLyric ? l.replace(/^\s+/,'') : l); // left-trim chord-less lyric lines (fixes center-column indent)
+    if(isLyric && prevBlank && nextBlank && titleCaseShort){ continue; } // sidebar leak (e.g. "Better Man")
+    out2.push(isLyric ? l.replace(/^\s+/,'') : l); // left-trim chord-less lyric lines
   }
   while(out2.length&&out2[out2.length-1]==="") out2.pop();
+  while(out2.length&&out2[0]==="") out2.shift();
   return out2.join("\n");
 }
 function parseSongMeta(name){
