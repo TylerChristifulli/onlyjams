@@ -151,8 +151,10 @@ const DEFAULT_SETLISTS = [];
 
 /* ---------- Storage (per device) ---------- */
 const LS="onlyjams.v2";
-function load(){ try{const d=JSON.parse(localStorage.getItem(LS)); if(d&&d.songs&&d.setlists) return d;}catch(e){}
-  return {songs:structuredClone(DEFAULT_SONGS), setlists:structuredClone(DEFAULT_SETLISTS)}; }
+function normalizeDB(d){ d=d||{}; d.songs=Array.isArray(d.songs)?d.songs:[]; d.setlists=Array.isArray(d.setlists)?d.setlists:[];
+  d.setlists.forEach(sl=>{ if(!sl||typeof sl!=='object'){return;} if(!Array.isArray(sl.songs)) sl.songs=[]; }); return d; }
+function load(){ try{const d=JSON.parse(localStorage.getItem(LS)); if(d&&d.songs) return normalizeDB(d);}catch(e){}
+  return normalizeDB({songs:structuredClone(DEFAULT_SONGS), setlists:structuredClone(DEFAULT_SETLISTS)}); }
 let __syncing=false; // true while applying a remote update, to avoid echo writes
 function save(){ localStorage.setItem(LS, JSON.stringify(DB)); if(window.__fbref && !__syncing){ try{ window.__fbref.set(DB); }catch(e){} } }
 let DB = load();
@@ -248,7 +250,7 @@ function renderHome(){
   if(DB.setlists.length===0) h+=`<div class="empty">No setlists yet.<br>Tap ＋ to make one.</div>`;
   DB.setlists.forEach(sl=>{
     h+=`<div class="listitem" data-sl="${sl.id}">
-      <div class="grow"><div class="title">${esc(sl.name)}</div><div class="muted">${sl.songs.length} songs</div></div>
+      <div class="grow"><div class="title">${esc(sl.name)}</div><div class="muted">${(sl.songs||[]).length} songs</div></div>
       <button class="minibtn" data-play="${sl.id}">▶ Play</button>
     </div>`;
   });
@@ -602,32 +604,33 @@ async function seedFromSongsJson(){
 }
 function boot(){
   applyTheme();
-  go({name:"home"}); // show local cache immediately
-  if(typeof firebase==='undefined'){ return; } // offline / SDK blocked -> stay local
-  try{
-    firebase.initializeApp(firebaseConfig);
-    window.__fbref = firebase.database().ref('library');
-    window.__fbref.on('value', (snap)=>{
-      const d = snap.val();
-      if(d && Array.isArray(d.songs)){
-        (d.songs||[]).forEach(s=>{ if(typeof s.body==='string') s.body=tidyBody(s.body); });
-        __syncing=true;
-        DB = {songs:d.songs, setlists:Array.isArray(d.setlists)?d.setlists:[]};
-        localStorage.setItem(LS, JSON.stringify(DB));
-        __syncing=false;
-        if(['home','library','setlist'].includes(view.name)) render(); // refresh non-editing views live
-      } else {
-        seedFromSongsJson(); // empty DB: populate once from the committed songs.json
-      }
-    });
-    window.__notesRef = firebase.database().ref('notes');
-    window.__notesRef.on('value', (snap)=>{
-      window.NOTES = snap.val()||{};
-      try{ localStorage.setItem('onlyjams.notes', JSON.stringify(window.NOTES)); }catch(e){}
-      if(!document.getElementById('notesPanel').classList.contains('hidden')) renderNotes();
-      if(!perf.classList.contains('hidden')) updateNotesBtn();
-    });
-  }catch(e){ console.warn('Firebase init failed; running in local mode', e); }
+  if(typeof firebase!=='undefined'){
+    try{
+      firebase.initializeApp(firebaseConfig);
+      window.__fbref = firebase.database().ref('library');
+      window.__fbref.on('value', (snap)=>{
+        const d = snap.val();
+        if(d && Array.isArray(d.songs)){
+          __syncing=true;
+          DB = normalizeDB({songs:d.songs, setlists:d.setlists});
+          DB.songs.forEach(s=>{ if(typeof s.body==='string') s.body=tidyBody(s.body); });
+          try{ localStorage.setItem(LS, JSON.stringify(DB)); }catch(e){}
+          __syncing=false;
+          if(['home','library','setlist'].includes(view.name)){ try{ render(); }catch(e){ console.error(e); } }
+        } else {
+          seedFromSongsJson(); // empty DB: populate once from the committed songs.json
+        }
+      });
+      window.__notesRef = firebase.database().ref('notes');
+      window.__notesRef.on('value', (snap)=>{
+        window.NOTES = snap.val()||{};
+        try{ localStorage.setItem('onlyjams.notes', JSON.stringify(window.NOTES)); }catch(e){}
+        if(!document.getElementById('notesPanel').classList.contains('hidden')){ try{ renderNotes(); }catch(e){} }
+        if(!perf.classList.contains('hidden')) updateNotesBtn();
+      });
+    }catch(e){ console.warn('Firebase init failed; running in local mode', e); }
+  }
+  try{ go({name:"home"}); }catch(e){ console.error('initial render error', e); }
 }
 boot();
 </script>
