@@ -533,8 +533,22 @@ document.getElementById('menuBtn').onclick=()=>{
 function exportData(){ const blob=new Blob([JSON.stringify(DB,null,2)],{type:"application/json"}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download="onlyjams-backup.json"; a.click(); }
 function importBackup(){ const inp=document.createElement('input');inp.type='file';inp.accept='.json,application/json';inp.onchange=()=>{const f=inp.files[0];const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(d.songs&&d.setlists){DB=d;save();go({name:"home"});alert("Imported.");}else alert("Not a valid backup file.");}catch(e){alert("Could not read file.");}};r.readAsText(f);};inp.click(); }
 
-applyTheme();
-go({name:"home"});
+// Load shared band library (songs.json next to this file) if present, so all bandmates see the same set.
+async function boot(){
+  try{
+    const r=await fetch('songs.json?_='+Date.now(),{cache:'no-store'});
+    if(r.ok){ const d=await r.json();
+      if(d && Array.isArray(d.songs)){
+        (d.songs||[]).forEach(s=>{ if(typeof s.body==='string') s.body=tidyBody(s.body); });
+        DB={songs:d.songs, setlists:Array.isArray(d.setlists)?d.setlists:[]};
+        save();
+      }
+    }
+  }catch(e){ /* no shared file or offline — fall back to this device's saved copy */ }
+  applyTheme();
+  go({name:"home"});
+}
+boot();
 </script>
 </body>
 </html>
