@@ -313,6 +313,8 @@ function addSongsToSetlist(sl){
 
 function renderLibrary(){
   const pickFor=view.pick;
+  const pickSL = pickFor ? DB.setlists.find(x=>x.id===pickFor) : null;
+  const inSet = id => !!(pickSL && (pickSL.songs||[]).includes(id));
   fab.classList.remove('hidden'); fab.textContent="＋"; fab.onclick=()=>go({name:"edit",songId:null,back:view});
   let h=`<div class="row" style="margin:6px 0 4px"><button class="minibtn" id="back">‹ Back</button>
     <div class="grow"></div>${pickFor?'<span class="pill">tap to add to setlist</span>':'<button class="minibtn" id="pasteBtn">📋 Paste</button> <button class="minibtn" id="importBtn">⤓ Import PDF</button>'}</div>`;
@@ -323,7 +325,7 @@ function renderLibrary(){
   DB.songs.slice().sort((a,b)=>a.title.localeCompare(b.title)).forEach(s=>{
     h+=`<div class="listitem" data-song="${s.id}">
       <div class="grow"><div class="title">${esc(s.title)}</div><div class="muted">${esc(s.artist||'')} ${s.key?'· '+esc(s.key):''}</div></div>
-      ${pickFor?`<button class="minibtn" data-add="${s.id}">＋ Add</button>`:`<button class="minibtn" data-edit="${s.id}">Edit</button><button class="minibtn" data-del="${s.id}" style="color:var(--danger)">✕</button>`}
+      ${pickFor?(inSet(s.id)?`<button class="minibtn" data-add="${s.id}" style="color:var(--accent2)">✓ In set</button>`:`<button class="minibtn" data-add="${s.id}">＋ Add</button>`):`<button class="minibtn" data-edit="${s.id}">Edit</button><button class="minibtn" data-del="${s.id}" style="color:var(--danger)">✕</button>`}
     </div>`;
   });
   h+=`</div>`;
@@ -334,7 +336,9 @@ function renderLibrary(){
   if(impBtn){ const inp=document.getElementById('pdfInput'); impBtn.onclick=()=>inp.click(); inp.onchange=()=>importPDFs(inp.files); }
   const pBtn=document.getElementById('pasteBtn'); if(pBtn) pBtn.onclick=()=>go({name:"paste"});
   if(pickFor){
-    main.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{const sl=DB.setlists.find(x=>x.id===pickFor);sl.songs.push(b.dataset.add);save();b.textContent="✓ Added";setTimeout(()=>b.textContent="＋ Add",800);});
+    main.querySelectorAll('[data-add]').forEach(b=>b.onclick=()=>{ const sl2=DB.setlists.find(x=>x.id===pickFor); if(!sl2)return; sl2.songs=sl2.songs||[]; const id=b.dataset.add;
+      if(sl2.songs.includes(id)){ b.textContent="Already in set"; b.style.color="var(--danger)"; setTimeout(()=>{ b.textContent="✓ In set"; b.style.color="var(--accent2)"; },1100); return; }
+      sl2.songs.push(id); save(); b.style.color="var(--accent2)"; b.textContent="✓ Added"; setTimeout(()=>{ b.textContent="✓ In set"; },900); });
   } else {
     main.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>go({name:"edit",songId:b.dataset.edit,back:{name:"library"}}));
     main.querySelectorAll('[data-del]').forEach(b=>b.onclick=(e)=>{e.stopPropagation(); const s=songById(b.dataset.del); if(confirm("Delete \""+(s?s.title:"this song")+"\"?")){ DB.songs=DB.songs.filter(x=>x.id!==b.dataset.del); DB.setlists.forEach(sl=>sl.songs=sl.songs.filter(id=>id!==b.dataset.del)); save(); render(); }});
@@ -616,7 +620,7 @@ function boot(){
           DB.songs.forEach(s=>{ if(typeof s.body==='string') s.body=tidyBody(s.body); });
           try{ localStorage.setItem(LS, JSON.stringify(DB)); }catch(e){}
           __syncing=false;
-          if(['home','library','setlist'].includes(view.name)){ try{ render(); }catch(e){ console.error(e); } }
+          if(['home','library','setlist'].includes(view.name) && !(view.name==='library'&&view.pick)){ try{ render(); }catch(e){ console.error(e); } }
         } else {
           seedFromSongsJson(); // empty DB: populate once from the committed songs.json
         }
