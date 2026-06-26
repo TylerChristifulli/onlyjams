@@ -518,9 +518,9 @@ async function importPDFs(fileList){
 
 /* ---------- Performance mode ---------- */
 const perf=document.getElementById('perf'), songEl=document.getElementById('song'), perfScroll=document.getElementById('perfScroll');
-let pf={list:[],idx:0,steps:0,fs:21,speed:3,scrolling:false,raf:null};
+let pf={list:[],idx:0,steps:0,fs:21,speed:3,trim:1,scrolling:false,raf:null};
 function openPerf(list,idx){
-  pf.list=list.slice(); pf.idx=idx; pf.steps=0; stopScroll();
+  pf.list=list.slice(); pf.idx=idx; pf.steps=0; pf.trim=1; stopScroll();
   perf.classList.remove('hidden'); drawPerf();
 }
 function drawPerf(){
@@ -536,17 +536,31 @@ function drawPerf(){
   songEl.innerHTML=renderSong(s.body, pf.steps, useFlats);
   perfScroll.scrollTop=0;
   updateNotesBtn();
+  updateSpeedLabel();
   if(!document.getElementById('notesPanel').classList.contains('hidden')) openNotes();
 }
 function closePerf(){ stopScroll(); perf.classList.add('hidden'); }
-function nextSong(){ if(pf.idx<pf.list.length-1){pf.idx++;pf.steps=0;stopScroll();drawPerf();} }
-function prevSong(){ if(pf.idx>0){pf.idx--;pf.steps=0;stopScroll();drawPerf();} }
+function nextSong(){ if(pf.idx<pf.list.length-1){pf.idx++;pf.steps=0;pf.trim=1;stopScroll();drawPerf();} }
+function prevSong(){ if(pf.idx>0){pf.idx--;pf.steps=0;pf.trim=1;stopScroll();drawPerf();} }
+// Auto-scroll: when a song has a run-time (dur, seconds), scroll so the chart
+// reaches the bottom exactly as the song ends. pf.trim is a fine-tune multiplier
+// (the +/- buttons). Songs with no dur fall back to the old fixed-speed scroll.
 function startScroll(){ pf.scrolling=true; document.getElementById('scrollBtn').textContent='⏸ Stop';
+  const s=songById(pf.list[pf.idx]);
+  const dist=()=>Math.max(1, perfScroll.scrollHeight - perfScroll.clientHeight);
   let last=performance.now();
-  const step=(t)=>{ if(!pf.scrolling)return; const dt=(t-last)/1000; last=t; perfScroll.scrollTop+=pf.speed*30*dt; if(perfScroll.scrollTop+perfScroll.clientHeight>=perfScroll.scrollHeight-2){stopScroll();} pf.raf=requestAnimationFrame(step); };
+  const step=(t)=>{ if(!pf.scrolling)return; const dt=(t-last)/1000; last=t;
+    const pps = (s && s.dur>0) ? (dist()/s.dur)*pf.trim : pf.speed*30;
+    perfScroll.scrollTop+=pps*dt;
+    if(perfScroll.scrollTop+perfScroll.clientHeight>=perfScroll.scrollHeight-2){stopScroll();}
+    pf.raf=requestAnimationFrame(step); };
   pf.raf=requestAnimationFrame(step);
 }
 function stopScroll(){ pf.scrolling=false; if(pf.raf)cancelAnimationFrame(pf.raf); const b=document.getElementById('scrollBtn'); if(b)b.textContent='▶ Scroll'; }
+function fmtTime(sec){ sec=Math.max(0,Math.round(sec)); const m=Math.floor(sec/60), r=sec%60; return m+':'+(r<10?'0':'')+r; }
+function updateSpeedLabel(){ const el=document.getElementById('spVal'); if(!el||!pf.list.length) return; const s=songById(pf.list[pf.idx]);
+  if(s && s.dur>0){ el.textContent=fmtTime(s.dur/pf.trim); el.title='Auto-scroll time (matches song length). Use −/+ to fine-tune.'; }
+  else { el.textContent=pf.speed; el.title='Scroll speed (no run-time set for this song)'; } }
 
 document.getElementById('perfClose').onclick=closePerf;
 document.getElementById('nextSong').onclick=nextSong;
@@ -556,8 +570,8 @@ document.getElementById('trDown').onclick=()=>{pf.steps--;drawPerf();};
 document.getElementById('fsUp').onclick=()=>{pf.fs=Math.min(40,pf.fs+2);drawPerf();};
 document.getElementById('fsDown').onclick=()=>{pf.fs=Math.max(14,pf.fs-2);drawPerf();};
 document.getElementById('scrollBtn').onclick=()=>{pf.scrolling?stopScroll():startScroll();};
-document.getElementById('spUp').onclick=()=>{pf.speed=Math.min(10,pf.speed+1);document.getElementById('spVal').textContent=pf.speed;};
-document.getElementById('spDown').onclick=()=>{pf.speed=Math.max(1,pf.speed-1);document.getElementById('spVal').textContent=pf.speed;};
+document.getElementById('spUp').onclick=()=>{ const s=songById(pf.list[pf.idx]); if(s&&s.dur>0){ pf.trim=Math.min(2,+(pf.trim+0.05).toFixed(2)); } else { pf.speed=Math.min(10,pf.speed+1); } updateSpeedLabel(); };
+document.getElementById('spDown').onclick=()=>{ const s=songById(pf.list[pf.idx]); if(s&&s.dur>0){ pf.trim=Math.max(0.5,+(pf.trim-0.05).toFixed(2)); } else { pf.speed=Math.max(1,pf.speed-1); } updateSpeedLabel(); };
 // swipe between songs
 let tsx=0,tsy=0;
 perfScroll.addEventListener('touchstart',e=>{tsx=e.touches[0].clientX;tsy=e.touches[0].clientY;},{passive:true});
